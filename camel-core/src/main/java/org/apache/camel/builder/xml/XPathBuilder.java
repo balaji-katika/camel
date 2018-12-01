@@ -43,6 +43,7 @@ import javax.xml.xpath.XPathFunctionResolver;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
+
 import org.xml.sax.InputSource;
 
 import org.apache.camel.CamelContext;
@@ -1076,9 +1077,9 @@ public class XPathBuilder extends ServiceSupport implements CamelContextAware, E
         XPath xPath = getXPathFactory().newXPath();
 
         if (!logNamespaces && LOG.isTraceEnabled()) {
-            LOG.trace("Creating new XPath expression in pool. Namespaces on XPath expression: {}", getNamespaceContext().toString());
+            LOG.trace("Creating new XPath expression in pool. Namespaces on XPath expression: {}", getNamespaceContext());
         } else if (logNamespaces && LOG.isInfoEnabled()) {
-            LOG.info("Creating new XPath expression in pool. Namespaces on XPath expression: {}", getNamespaceContext().toString());
+            LOG.info("Creating new XPath expression in pool. Namespaces on XPath expression: {}", getNamespaceContext());
         }
         xPath.setNamespaceContext(getNamespaceContext());
         xPath.setXPathVariableResolver(getVariableResolver());

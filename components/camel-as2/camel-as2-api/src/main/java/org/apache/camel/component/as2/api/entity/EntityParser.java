@@ -40,20 +40,25 @@ import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpException;
 import org.apache.http.HttpMessage;
+import org.apache.http.NameValuePair;
 import org.apache.http.ParseException;
 import org.apache.http.entity.ContentType;
 import org.apache.http.impl.io.AbstractMessageParser;
 import org.apache.http.impl.io.HttpTransportMetricsImpl;
 import org.apache.http.message.BasicLineParser;
+import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.message.LineParser;
 import org.apache.http.message.ParserCursor;
 import org.apache.http.util.Args;
 import org.apache.http.util.CharArrayBuffer;
+import org.bouncycastle.cms.CMSCompressedData;
 import org.bouncycastle.cms.CMSEnvelopedData;
+import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.cms.Recipient;
 import org.bouncycastle.cms.RecipientInformation;
 import org.bouncycastle.cms.RecipientInformationStore;
 import org.bouncycastle.cms.jcajce.JceKeyTransEnvelopedRecipient;
+import org.bouncycastle.operator.InputExpanderProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -169,18 +174,32 @@ public final class EntityParser {
             throw new HttpException("Failed to read start boundary for body part", e);
         }
 
-        if (!foundEndBoundary) {
+        if (!foundEndBoundary && boundary != null) {
             throw new HttpException("Failed to find start boundary for body part");
         }
 
     }
     
-    public static MimeEntity parseEnvelopedEntity(byte[] envelopedContent, PrivateKey privateKey) {
+    public static MimeEntity parseCompressedEntity(byte[] compressedData, InputExpanderProvider expanderProvider)
+            throws HttpException {
+
+        byte[] uncompressedContent = uncompressData(compressedData, expanderProvider);
+
+        return parseEntity(uncompressedContent);
+    }
+
+    public static MimeEntity parseEnvelopedEntity(byte[] envelopedContent, PrivateKey privateKey) throws HttpException {
+
+        byte[] decryptedContent = decryptData(envelopedContent, privateKey);
+
+        return parseEntity(decryptedContent);
+    }
+
+    public static MimeEntity parseEntity(byte[] content) throws HttpException {
         
         try {
-            byte[] decryptedContent = decryptData(envelopedContent, privateKey);
             
-            InputStream is = new ByteArrayInputStream(decryptedContent);
+            InputStream is = new ByteArrayInputStream(content);
             AS2SessionInputBuffer inbuffer = new AS2SessionInputBuffer(new HttpTransportMetricsImpl(), DEFAULT_BUFFER_SIZE);
             inbuffer.bind(is);
 
@@ -189,54 +208,68 @@ public final class EntityParser {
                     new ArrayList<CharArrayBuffer>());
 
             // Get Content-Type and Content-Transfer-Encoding
-            ContentType envelopedEntityContentType = null;
-            String envelopedEntityContentTransferEncoding = null;
+            ContentType entityContentType = null;
+            String entityContentTransferEncoding = null;
             for (Header header : headers) {
                 switch (header.getName()) {
                 case AS2Header.CONTENT_TYPE:
-                    envelopedEntityContentType = ContentType.parse(header.getValue());
+                    entityContentType = ContentType.parse(header.getValue());
                     break;
                 case AS2Header.CONTENT_TRANSFER_ENCODING:
-                    envelopedEntityContentTransferEncoding = header.getValue();
+                    entityContentTransferEncoding = header.getValue();
                     break;
                 default:
                     continue;
                 }
             }
-            if (envelopedEntityContentType == null) {
+            if (entityContentType == null) {
                 throw new HttpException("Failed to find Content-Type header in enveloped entity");
             }
 
-            MimeEntity entity = parseEntityBody(inbuffer, null, envelopedEntityContentType, envelopedEntityContentTransferEncoding, headers);
+            MimeEntity entity = parseEntityBody(inbuffer, null, entityContentType, entityContentTransferEncoding, headers);
             entity.removeAllHeaders();
             entity.setHeaders(headers);
             
             return entity;
         } catch (Exception e) {
-            return null;
+            throw new HttpException("Failed to parse entity", e);
         }
     }
 
-    public static byte[] decryptData(byte[] encryptedData, PrivateKey privateKey) throws Exception {
-        // Create enveloped data from encrypted data
-        CMSEnvelopedData cmsEnvelopedData = new CMSEnvelopedData(encryptedData);
-        
-        // Extract recipient information form enveloped data.
-        RecipientInformationStore recipientsInformationStore = cmsEnvelopedData.getRecipientInfos();
-        Collection<RecipientInformation> recipients = recipientsInformationStore.getRecipients();
-        Iterator<RecipientInformation> it = recipients.iterator();
-        
-        // Decrypt if enveloped data contains recipient information
-        if (it.hasNext()) {
-            // Create recipient from private key.
-            Recipient recipient = new JceKeyTransEnvelopedRecipient(privateKey);
+    public static byte[] uncompressData(byte[] compressedData, InputExpanderProvider expanderProvider)
+            throws HttpException {
+        try {
+            CMSCompressedData cmsCompressedData = new CMSCompressedData(compressedData);
+            return cmsCompressedData.getContent(expanderProvider);
+        } catch (CMSException e) {
+            throw new HttpException("Failed to decompress data", e);
+        }
+    }
 
-            // Extract decrypted data from recipient information
-            RecipientInformation recipientInfo = it.next();
-            return recipientInfo.getContent(recipient);
+    public static byte[] decryptData(byte[] encryptedData, PrivateKey privateKey) throws HttpException {
+        try {
+            // Create enveloped data from encrypted data
+            CMSEnvelopedData cmsEnvelopedData = new CMSEnvelopedData(encryptedData);
+            
+            // Extract recipient information form enveloped data.
+            RecipientInformationStore recipientsInformationStore = cmsEnvelopedData.getRecipientInfos();
+            Collection<RecipientInformation> recipients = recipientsInformationStore.getRecipients();
+            Iterator<RecipientInformation> it = recipients.iterator();
+            
+            // Decrypt if enveloped data contains recipient information
+            if (it.hasNext()) {
+                // Create recipient from private key.
+                Recipient recipient = new JceKeyTransEnvelopedRecipient(privateKey);
+
+                // Extract decrypted data from recipient information
+                RecipientInformation recipientInfo = it.next();
+                return recipientInfo.getContent(recipient);
+            }
+        } catch (CMSException e) {
+            throw new HttpException("Failed to decrypt data", e);
         }
         
-        return null;
+        throw new HttpException("Failed to decrypt data: bno recipeint information");
     }
     
     public static void parseMultipartSignedEntity(HttpMessage message)
@@ -276,12 +309,18 @@ public final class EntityParser {
             inbuffer.bind(entity.getContent());
 
             // Get Boundary Value
-            String boundary = HttpMessageUtils.getBoundaryParameterValue(message, AS2Header.CONTENT_TYPE);
+            String boundary = HttpMessageUtils.getParameterValue(message, AS2Header.CONTENT_TYPE, "boundary");
             if (boundary == null) {
-                throw new HttpException("Failed to retrive boundary value");
+                throw new HttpException("Failed to retrieve 'boundary' parameter from content type header");
+            }
+            
+            // Get Micalg Value
+            String micalg = HttpMessageUtils.getParameterValue(message, AS2Header.CONTENT_TYPE, "micalg");
+            if (micalg == null) {
+                throw new HttpException("Failed to retrieve 'micalg' parameter from content type header");
             }
 
-            multipartSignedEntity = parseMultipartSignedEntityBody(inbuffer, boundary, charsetName, contentTransferEncoding);
+            multipartSignedEntity = parseMultipartSignedEntityBody(inbuffer, boundary, micalg, charsetName, contentTransferEncoding);
             multipartSignedEntity.setMainBody(true);
 
             EntityUtils.setMessageEntity(message, multipartSignedEntity);
@@ -370,7 +409,7 @@ public final class EntityParser {
             inbuffer.bind(entity.getContent());
 
             // Get Boundary Value
-            String boundary = HttpMessageUtils.getBoundaryParameterValue(message, AS2Header.CONTENT_TYPE);
+            String boundary = HttpMessageUtils.getParameterValue(message, AS2Header.CONTENT_TYPE, "boundary");
             if (boundary == null) {
                 throw new HttpException("Failed to retrive boundary value");
             }
@@ -420,6 +459,7 @@ public final class EntityParser {
 
     public static MultipartSignedEntity parseMultipartSignedEntityBody(AS2SessionInputBuffer inbuffer,
                                                                        String boundary,
+                                                                       String micalg,
                                                                        String charsetName,
                                                                        String contentTransferEncoding)
             throws ParseException {
@@ -514,7 +554,11 @@ public final class EntityParser {
             //
             // End Signature Body Part
 
-            ContentType contentType = ContentType.create(AS2MimeType.MULTIPART_SIGNED, charset);
+            NameValuePair[] parameters = new NameValuePair[] {
+                new BasicNameValuePair("protocol", AS2MimeType.APPLICATION_PKCS7_SIGNATURE),
+                new BasicNameValuePair("boundary", boundary), new BasicNameValuePair("micalg", micalg),
+                new BasicNameValuePair("charset", charsetName)};
+            ContentType contentType = ContentType.create(AS2MimeType.MULTIPART_SIGNED, parameters);
             multipartSignedEntity.setContentType(contentType);
             multipartSignedEntity.setContentTransferEncoding(contentTransferEncoding);
             return multipartSignedEntity;
@@ -731,9 +775,10 @@ public final class EntityParser {
                 entity = parseEDIEntityBody(inbuffer, boundary, entityContentType, contentTransferEncoding);
                 break;
             case AS2MimeType.MULTIPART_SIGNED:
-                String multipartSignedBoundary = AS2HeaderUtils.getBoundaryParameterValue(headers,
-                        AS2Header.CONTENT_TYPE);
-                entity = parseMultipartSignedEntityBody(inbuffer, multipartSignedBoundary, charset.name(),
+                String multipartSignedBoundary = AS2HeaderUtils.getParameterValue(headers,
+                        AS2Header.CONTENT_TYPE, "boundary");
+                String micalg = AS2HeaderUtils.getParameterValue(headers, AS2Header.CONTENT_TYPE, "micalg");
+                entity = parseMultipartSignedEntityBody(inbuffer, multipartSignedBoundary, micalg, charset.name(),
                         contentTransferEncoding);
                 skipToBoundary(inbuffer, boundary);
                 break;
@@ -742,8 +787,8 @@ public final class EntityParser {
                         contentTransferEncoding);
                 break;
             case AS2MimeType.MULTIPART_REPORT:
-                String multipartReportBoundary = AS2HeaderUtils.getBoundaryParameterValue(headers,
-                        AS2Header.CONTENT_TYPE);
+                String multipartReportBoundary = AS2HeaderUtils.getParameterValue(headers,
+                        AS2Header.CONTENT_TYPE, "boundary");
                 entity = parseMultipartReportEntityBody(inbuffer, multipartReportBoundary, charset.name(),
                         contentTransferEncoding);
                 skipToBoundary(inbuffer, boundary);
@@ -837,7 +882,7 @@ public final class EntityParser {
         }
     }
 
-    public static ApplicationPkcs7MimeEntity parseApplicationPkcs7MimeEntityBody(AS2SessionInputBuffer inbuffer,
+    public static ApplicationPkcs7MimeEnvelopedDataEntity parseApplicationPkcs7MimeEntityBody(AS2SessionInputBuffer inbuffer,
                                                                                       String boundary,
                                                                                       ContentType contentType,
                                                                                       String contentTransferEncoding)
@@ -858,7 +903,7 @@ public final class EntityParser {
 
             byte[] encryptedContent = EntityUtils.decode(pkcs7EncryptedBodyContent.getBytes(charset), contentTransferEncoding);
 
-            ApplicationPkcs7MimeEntity applicationPkcs7MimeEntity = new ApplicationPkcs7MimeEntity(
+            ApplicationPkcs7MimeEnvelopedDataEntity applicationPkcs7MimeEntity = new ApplicationPkcs7MimeEnvelopedDataEntity(
                     encryptedContent, contentTransferEncoding, false);
             return applicationPkcs7MimeEntity;
         } catch (Exception e) {

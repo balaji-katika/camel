@@ -16,6 +16,7 @@
  */
 package org.apache.camel.component.google.calendar.stream;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
@@ -42,6 +43,7 @@ import org.slf4j.LoggerFactory;
 public class GoogleCalendarStreamConsumer extends ScheduledBatchPollingConsumer {
 
     private static final Logger LOG = LoggerFactory.getLogger(GoogleCalendarStreamConsumer.class);
+    private DateTime lastUpdate;
 
     public GoogleCalendarStreamConsumer(Endpoint endpoint, Processor processor) {
         super(endpoint, processor);
@@ -62,28 +64,55 @@ public class GoogleCalendarStreamConsumer extends ScheduledBatchPollingConsumer 
 
     @Override
     protected int poll() throws Exception {
-        Date date = new Date();
-        com.google.api.services.calendar.Calendar.Events.List request = getClient().events().list("primary").setOrderBy("updated").setTimeMin(new DateTime(date));
+        com.google.api.services.calendar.Calendar.Events.List request = getClient().events().list(getConfiguration().getCalendarId()).setOrderBy("updated");
         if (ObjectHelper.isNotEmpty(getConfiguration().getQuery())) {
             request.setQ(getConfiguration().getQuery());
         }
         if (ObjectHelper.isNotEmpty(getConfiguration().getMaxResults())) {
             request.setMaxResults(getConfiguration().getMaxResults());
         }
+        if (getConfiguration().isConsumeFromNow()) {
+            Date date = new Date();
+            request.setTimeMin(new DateTime(date));
+        }
+        if (getConfiguration().isConsiderLastUpdate()) {
+            if (ObjectHelper.isNotEmpty(lastUpdate)) {
+                request.setUpdatedMin(lastUpdate);
+            }
+        }
 
         Queue<Exchange> answer = new LinkedList<>();
+        List<Date> dateList = new ArrayList<>();
 
         Events c = request.execute();
 
         if (c != null) {
             List<Event> list = c.getItems();
+
             for (Event event : list) {
                 Exchange exchange = getEndpoint().createExchange(getEndpoint().getExchangePattern(), event);
                 answer.add(exchange);
+                dateList.add(new Date(event.getUpdated().getValue()));
             }
         }
 
+        lastUpdate = retrieveLastUpdateDate(dateList);
         return processBatch(CastUtils.cast(answer));
+    }
+
+    private DateTime retrieveLastUpdateDate(List<Date> dateList) {
+        Date finalLastUpdate;
+        if (!dateList.isEmpty()) {
+            dateList.sort((o1, o2) -> o1.compareTo(o2));
+            Date lastUpdateDate = dateList.get(dateList.size() - 1);
+            java.util.Calendar calendar = java.util.Calendar.getInstance();
+            calendar.setTime(lastUpdateDate);
+            calendar.add(java.util.Calendar.SECOND, 1);
+            finalLastUpdate = calendar.getTime();
+        } else {
+            finalLastUpdate = new Date();
+        }
+        return new DateTime(finalLastUpdate);
     }
 
     @Override
@@ -108,7 +137,6 @@ public class GoogleCalendarStreamConsumer extends ScheduledBatchPollingConsumer 
                 }
             });
         }
-
         return total;
     }
 

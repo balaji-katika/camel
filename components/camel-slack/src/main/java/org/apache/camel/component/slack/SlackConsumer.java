@@ -62,7 +62,7 @@ public class SlackConsumer extends ScheduledBatchPollingConsumer {
         Queue<Exchange> exchanges;
 
         HttpClient client = HttpClientBuilder.create().useSystemProperties().build();
-        HttpPost httpPost = new HttpPost("https://slack.com/api/channels.history");
+        HttpPost httpPost = new HttpPost(slackEndpoint.getServerUrl() + "/api/channels.history");
         List<BasicNameValuePair> params = new ArrayList<BasicNameValuePair>();
         params.add(new BasicNameValuePair("channel", channelId));
         if (ObjectHelper.isNotEmpty(timestamp)) {
@@ -85,17 +85,19 @@ public class SlackConsumer extends ScheduledBatchPollingConsumer {
 
     private Queue<Exchange> createExchanges(List list) {
         Queue<Exchange> answer = new LinkedList<>();
-        Iterator it = list.iterator();
-        int i = 0;
-        while (it.hasNext()) {
-            Object object = (Object)it.next();
-            JSONObject singleMess = (JSONObject)object;
-            if (i == 0) {
-                timestamp = (String)singleMess.get("ts");
+        if (ObjectHelper.isNotEmpty(list)) {
+            Iterator it = list.iterator();
+            int i = 0;
+            while (it.hasNext()) {
+                Object object = (Object)it.next();
+                JSONObject singleMess = (JSONObject)object;
+                if (i == 0) {
+                    timestamp = (String)singleMess.get("ts");
+                }
+                i++;
+                Exchange exchange = slackEndpoint.createExchange(singleMess);
+                answer.add(exchange);
             }
-            i++;
-            Exchange exchange = slackEndpoint.createExchange(singleMess);
-            answer.add(exchange);
         }
         return answer;
     }
@@ -128,7 +130,7 @@ public class SlackConsumer extends ScheduledBatchPollingConsumer {
 
     private String getChannelId(String channel) throws IOException, ParseException {
         HttpClient client = HttpClientBuilder.create().useSystemProperties().build();
-        HttpPost httpPost = new HttpPost("https://slack.com/api/channels.list");
+        HttpPost httpPost = new HttpPost(slackEndpoint.getServerUrl() + "/api/channels.list");
 
         List<BasicNameValuePair> params = new ArrayList<BasicNameValuePair>();
         params.add(new BasicNameValuePair("token", slackEndpoint.getToken()));

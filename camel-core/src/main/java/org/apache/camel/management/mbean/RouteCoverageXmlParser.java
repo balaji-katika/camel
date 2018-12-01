@@ -19,21 +19,24 @@ package org.apache.camel.management.mbean;
 import java.io.InputStream;
 import java.util.Stack;
 
+import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 
-import org.apache.camel.CamelContext;
-import org.apache.camel.api.management.mbean.ManagedProcessorMBean;
-import org.apache.camel.api.management.mbean.ManagedRouteMBean;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
+
 import org.xml.sax.Attributes;
 import org.xml.sax.Locator;
 import org.xml.sax.SAXException;
 import org.xml.sax.helpers.DefaultHandler;
+
+import org.apache.camel.CamelContext;
+import org.apache.camel.api.management.mbean.ManagedProcessorMBean;
+import org.apache.camel.api.management.mbean.ManagedRouteMBean;
 
 /**
  * An XML parser that uses SAX to enrich route stats in the route dump.
@@ -60,8 +63,10 @@ public final class RouteCoverageXmlParser {
      */
     public static Document parseXml(final CamelContext camelContext, final InputStream is) throws Exception {
         final SAXParserFactory factory = SAXParserFactory.newInstance();
+        factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, Boolean.TRUE);
         final SAXParser parser = factory.newSAXParser();
         final DocumentBuilderFactory docBuilderFactory = DocumentBuilderFactory.newInstance();
+        docBuilderFactory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, Boolean.TRUE);
         final DocumentBuilder docBuilder = docBuilderFactory.newDocumentBuilder();
         final Document doc = docBuilder.newDocument();
 

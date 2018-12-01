@@ -16,8 +16,6 @@
  */
 package org.apache.camel.processor;
 
-import static org.apache.camel.util.ObjectHelper.notNull;
-
 import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -74,6 +72,8 @@ import org.apache.camel.util.concurrent.AtomicExchange;
 import org.apache.camel.util.concurrent.SubmitOrderedCompletionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static org.apache.camel.util.ObjectHelper.notNull;
 
 
 /**
@@ -758,10 +758,9 @@ public class MulticastProcessor extends ServiceSupport implements AsyncProcessor
                             doAggregate(getAggregationStrategy(subExchange), result, subExchange);
                         }
                     } catch (Throwable e) {
-                        // wrap in exception to explain where it failed
-                        subExchange.setException(new CamelExchangeException("Sequential processing failed for number " + total, subExchange, e));
+                        original.setException(e);
                         // and do the done work
-                        doDone(original, subExchange, pairs, callback, false, true);
+                        doDone(original, null, pairs, callback, false, true);
                         return;
                     }
 

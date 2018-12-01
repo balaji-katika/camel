@@ -84,11 +84,11 @@ public class GoogleCalendarStreamComponentConfiguration
     public static class GoogleCalendarStreamConfigurationNestedConfiguration {
         public static final Class CAMEL_NESTED_CLASS = org.apache.camel.component.google.calendar.stream.GoogleCalendarStreamConfiguration.class;
         /**
-         * Client ID of the mail application
+         * Client ID of the calendar application
          */
         private String clientId;
         /**
-         * Client secret of the mail application
+         * Client secret of the calendar application
          */
         private String clientSecret;
         /**
@@ -108,9 +108,9 @@ public class GoogleCalendarStreamComponentConfiguration
          */
         private String applicationName;
         /**
-         * Specifies the level of permissions you want a mail application to
+         * Specifies the level of permissions you want a calendar application to
          * have to a user account. See
-         * https://developers.google.com/calendar/api/auth/scopes for more info.
+         * https://developers.google.com/calendar/auth for more info.
          */
         private List scopes;
         /**
@@ -125,6 +125,19 @@ public class GoogleCalendarStreamComponentConfiguration
          * Max results to be returned
          */
         private Integer maxResults = 10;
+        /**
+         * The calendarId to be used
+         */
+        private String calendarId = "primary";
+        /**
+         * Consume events in the selected calendar from now on
+         */
+        private Boolean consumeFromNow = true;
+        /**
+         * Take into account the lastUpdate of the last event polled as start
+         * date for the next poll
+         */
+        private Boolean considerLastUpdate = false;
 
         public String getClientId() {
             return clientId;
@@ -196,6 +209,30 @@ public class GoogleCalendarStreamComponentConfiguration
 
         public void setMaxResults(Integer maxResults) {
             this.maxResults = maxResults;
+        }
+
+        public String getCalendarId() {
+            return calendarId;
+        }
+
+        public void setCalendarId(String calendarId) {
+            this.calendarId = calendarId;
+        }
+
+        public Boolean getConsumeFromNow() {
+            return consumeFromNow;
+        }
+
+        public void setConsumeFromNow(Boolean consumeFromNow) {
+            this.consumeFromNow = consumeFromNow;
+        }
+
+        public Boolean getConsiderLastUpdate() {
+            return considerLastUpdate;
+        }
+
+        public void setConsiderLastUpdate(Boolean considerLastUpdate) {
+            this.considerLastUpdate = considerLastUpdate;
         }
     }
 }

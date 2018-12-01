@@ -16,11 +16,10 @@
  */
 package org.apache.camel.component.google.calendar.stream;
 
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import com.google.api.services.calendar.CalendarScopes;
-
 import org.apache.camel.RuntimeCamelException;
 import org.apache.camel.spi.UriParam;
 import org.apache.camel.spi.UriParams;
@@ -31,7 +30,7 @@ import org.apache.camel.spi.UriPath;
  */
 @UriParams
 public class GoogleCalendarStreamConfiguration implements Cloneable {
-    private static final List<String> DEFAULT_SCOPES = Arrays.asList(CalendarScopes.CALENDAR);
+    private static final List<String> DEFAULT_SCOPES = Collections.singletonList(CalendarScopes.CALENDAR);
 
     @UriPath
     private String index;
@@ -60,12 +59,21 @@ public class GoogleCalendarStreamConfiguration implements Cloneable {
     @UriParam(defaultValue = "10")
     private int maxResults = 10;
 
+    @UriParam(defaultValue = "primary")
+    private String calendarId = "primary";
+
+    @UriParam(defaultValue = "true")
+    private boolean consumeFromNow = true;
+
+    @UriParam(defaultValue = "false")
+    private boolean considerLastUpdate;
+
     public String getClientId() {
         return clientId;
     }
 
     /**
-     * Client ID of the mail application
+     * Client ID of the calendar application
      */
     public void setClientId(String clientId) {
         this.clientId = clientId;
@@ -76,7 +84,7 @@ public class GoogleCalendarStreamConfiguration implements Cloneable {
     }
 
     /**
-     * Client secret of the mail application
+     * Client secret of the calendar application
      */
     public void setClientSecret(String clientSecret) {
         this.clientSecret = clientSecret;
@@ -123,8 +131,8 @@ public class GoogleCalendarStreamConfiguration implements Cloneable {
     }
 
     /**
-     * Specifies the level of permissions you want a mail application to have to
-     * a user account. See https://developers.google.com/calendar/api/auth/scopes
+     * Specifies the level of permissions you want a calendar application to have to
+     * a user account. See https://developers.google.com/calendar/auth
      * for more info.
      */
     public void setScopes(List<String> scopes) {
@@ -164,10 +172,42 @@ public class GoogleCalendarStreamConfiguration implements Cloneable {
         this.maxResults = maxResults;
     }
 
+    public String getCalendarId() {
+        return calendarId;
+    }
+
+    /**
+     * The calendarId to be used
+     */
+    public void setCalendarId(String calendarId) {
+        this.calendarId = calendarId;
+    }
+
+    public boolean isConsumeFromNow() {
+        return consumeFromNow;
+    }
+
+    /**
+     * Consume events in the selected calendar from now on
+     */
+    public void setConsumeFromNow(boolean consumeFromNow) {
+        this.consumeFromNow = consumeFromNow;
+    }
+
+    public boolean isConsiderLastUpdate() {
+        return considerLastUpdate;
+    }
+
+    /**
+     * Take into account the lastUpdate of the last event polled as start date for the next poll
+     */
+    public void setConsiderLastUpdate(boolean considerLastUpdate) {
+        this.considerLastUpdate = considerLastUpdate;
+    }
+
     // *************************************************
     //
     // *************************************************
-
     public GoogleCalendarStreamConfiguration copy() {
         try {
             return (GoogleCalendarStreamConfiguration)super.clone();
